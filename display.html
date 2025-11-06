@@ -30,17 +30,14 @@
     // 換成你的 Worker 網址
     const API_BASE = "https://countdown-api.cometw1234.workers.dev";
 
-    // 取得網址上的 id (=我們的房間 id)
     const params = new URLSearchParams(location.search);
     const roomId = params.get("id") || params.get("room") || "show-1";
 
     const timeEl = document.getElementById("time");
 
-    // 讓字會依照螢幕大小縮放
     function resize() {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      // 取短邊的 20% 當字體
       const size = Math.min(w, h) * 0.2;
       timeEl.style.fontSize = size + "px";
     }
@@ -54,32 +51,47 @@
       return `${h}:${m}:${s}`;
     }
 
+    // 我們自己維護的剩餘秒數
+    let remainingSec = null;
+    let running = false;
+
+    // 每 200ms 畫一次，用自己的時間減
+    setInterval(() => {
+      if (remainingSec == null) {
+        timeEl.textContent = "";
+        return;
+      }
+      if (running) {
+        remainingSec -= 0.2; // 200ms
+        if (remainingSec < 0) remainingSec = 0;
+      }
+      timeEl.textContent = format(Math.floor(remainingSec));
+    }, 200);
+
+    // 每 3 秒去跟後端校正一次
     async function poll() {
       try {
         const res = await fetch(`${API_BASE}/api?room=${encodeURIComponent(roomId)}`);
         if (res.ok) {
           const data = await res.json();
-          let sec = null;
-          if (data.state === "paused" && typeof data.remaining === "number") {
-            sec = Math.floor(data.remaining / 1000);
-          } else if (data.state === "running" && data.targetTime) {
-            sec = Math.max(0, Math.floor((data.targetTime - Date.now()) / 1000));
-          }
 
-          if (sec == null) {
-            // 一開始不顯示 --:--:--
-            timeEl.textContent = "";
-          } else {
-            timeEl.textContent = format(sec);
+          if (data.state === "running" && data.targetTime) {
+            const now = Date.now();
+            const diffMs = data.targetTime - now;
+            remainingSec = Math.max(0, diffMs / 1000);
+            running = true;
+          } else if (data.state === "paused" && typeof data.remaining === "number") {
+            remainingSec = data.remaining / 1000;
+            running = false;
+          } else if (data.state === "idle") {
+            remainingSec = null;
+            running = false;
           }
-        } else {
-          // 拿不到就不要閃現醜字
-          timeEl.textContent = "";
         }
       } catch (e) {
-        // ignore
+        // 忽略錯誤，下次再抓
       } finally {
-        setTimeout(poll, 500); // 半秒抓一次比較順
+        setTimeout(poll, 3000); // 3 秒校正一次
       }
     }
     poll();
