@@ -104,8 +104,7 @@
         await sendApi({ room: roomId, action: 'reset' }, statusEl);
       };
       openBtn.onclick = () => {
-        // 之後我們會做 display.html
-        alert('之後會開顯示頁面：display.html?id=' + roomId);
+  	window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
     }
 
