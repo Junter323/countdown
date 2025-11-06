@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <title>倒數控制中心</title>
-  <!-- Bootstrap 5 -->
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
     rel="stylesheet"
@@ -12,26 +11,40 @@
     body { background: #f5f5f5; }
     .timer-card { min-width: 260px; }
     .status-text { font-size: 0.75rem; color: #6c757d; }
+    #token-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    #token-box {
+      background: #fff;
+      padding: 20px 24px;
+      border-radius: 8px;
+      width: 320px;
+    }
   </style>
 </head>
 <body>
-  <div class="container py-4">
+  <!-- token 輸入遮罩 -->
+  <div id="token-overlay">
+    <div id="token-box">
+      <h5 class="mb-3">請輸入控制 token</h5>
+      <input id="token-input" type="password" class="form-control mb-3" placeholder="請輸入 token" />
+      <div class="d-grid gap-2">
+        <button id="token-submit" class="btn btn-primary">進入控制台</button>
+      </div>
+      <div id="token-error" class="text-danger mt-2" style="display:none;">token 無效，請再試一次</div>
+    </div>
+  </div>
+
+  <!-- 真正的控制頁面 -->
+  <div class="container py-4" id="control-ui" style="display:none;">
     <h1 class="mb-3">倒數控制中心</h1>
 
-    <!-- token 區 -->
-    <div class="mb-3 row g-2 align-items-center">
-      <div class="col-auto">
-        <label for="token" class="col-form-label">控制 token</label>
-      </div>
-      <div class="col-auto">
-        <input id="token" type="password" class="form-control" placeholder="輸入控制用的 token" />
-      </div>
-      <div class="col-auto">
-        <span class="text-muted" style="font-size:0.75rem;">（這個會一起送到 /api）</span>
-      </div>
-    </div>
-
-    <!-- 新增卡片列 -->
     <div class="row g-2 mb-4">
       <div class="col-auto">
         <input id="newId" type="text" class="form-control" placeholder="輸入倒數 ID，例如 show-1" />
@@ -41,7 +54,6 @@
       </div>
     </div>
 
-    <!-- 卡片區 -->
     <div id="cards" class="row g-3"></div>
   </div>
 
@@ -49,17 +61,61 @@
     const cardsEl = document.getElementById('cards');
     const addBtn = document.getElementById('addBtn');
     const newIdInput = document.getElementById('newId');
-    const tokenInput = document.getElementById('token');
 
-    addBtn.onclick = () => {
-      const id = newIdInput.value.trim();
-      if (!id) return;
-      createCard(id);
-      newIdInput.value = '';
-    };
+    // 存在這裡的 token 會被 sendApi 用
+    let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
 
-    // 預設塞一張
-    createCard('show-1');
+    // token overlay 邏輯
+    const overlay = document.getElementById('token-overlay');
+    const controlUI = document.getElementById('control-ui');
+    const tokenInput = document.getElementById('token-input');
+    const tokenSubmit = document.getElementById('token-submit');
+    const tokenError = document.getElementById('token-error');
+
+    async function tryEnter() {
+      const t = tokenInput.value.trim();
+      if (!t) return;
+      // 我們用一個假的請求來測 token 有沒有過
+      const res = await fetch('/api', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ room: '__check__', action: 'reset', token: t })
+      });
+      if (res.status === 401) {
+        tokenError.style.display = 'block';
+        return;
+      }
+      // 成功
+      CONTROL_TOKEN = t;
+      sessionStorage.setItem('countdown_token', t);
+      overlay.style.display = 'none';
+      controlUI.style.display = '';
+      // 加一張預設卡
+      createCard('show-1');
+    }
+
+    tokenSubmit.onclick = tryEnter;
+    tokenInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') tryEnter();
+    });
+
+    // 如果 sessionStorage 有 token，試一次
+    (async () => {
+      if (CONTROL_TOKEN) {
+        tokenInput.value = CONTROL_TOKEN;
+        await tryEnter();
+      }
+    })();
+
+    // 新增卡片
+    if (addBtn) {
+      addBtn.onclick = () => {
+        const id = newIdInput.value.trim();
+        if (!id) return;
+        createCard(id);
+        newIdInput.value = '';
+      };
+    }
 
     function createCard(roomId) {
       if (document.getElementById('card-' + roomId)) return;
@@ -118,25 +174,26 @@
         const targetTime = Date.now() + totalSec * 1000;
         await sendApi({ room: roomId, action: 'start', targetTime }, statusEl);
       };
+
       pauseBtn.onclick = async () => {
         await sendApi({ room: roomId, action: 'pause' }, statusEl);
       };
+
       resetBtn.onclick = async () => {
         await sendApi({ room: roomId, action: 'reset' }, statusEl);
       };
+
       openBtn.onclick = () => {
         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
 
-      // 每秒抓一次狀態，顯示「目前倒數」
+      // 定時抓狀態
       async function poll() {
         try {
           const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
           if (res.ok) {
             const data = await res.json();
-            // 狀態同步一下
             statusEl.textContent = '狀態：' + (data.state || '未知');
-            // 把剩餘時間轉成 00:00:00
             let sec = null;
             if (data.state === 'paused' && typeof data.remaining === 'number') {
               sec = Math.floor(data.remaining / 1000);
@@ -163,14 +220,18 @@
 
     async function sendApi(body, statusEl) {
       try {
-        const token = tokenInput.value.trim();
         const res = await fetch('/api', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ ...body, token })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...body, token: CONTROL_TOKEN })
         });
+        if (res.status === 401) {
+          // token 失效，叫回遮罩
+          overlay.style.display = '';
+          controlUI.style.display = 'none';
+          document.getElementById('token-error').style.display = 'block';
+          return;
+        }
         if (!res.ok) {
           statusEl.textContent = '狀態：失敗 (' + res.status + ')';
           return;
@@ -182,6 +243,5 @@
       }
     }
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

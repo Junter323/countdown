@@ -1,7 +1,5 @@
-// 簡單記憶體狀態
+// 簡單記憶體
 const rooms = {};
-// 換成你自己的 token
-const VALID_TOKEN = "CHANGE_ME";
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
@@ -23,6 +21,7 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
+  const env = context.env;
   const body = await context.request.json();
   const { room, action, targetTime, token } = body;
 
@@ -30,8 +29,12 @@ export async function onRequestPost(context) {
     return new Response("room required", { status: 400 });
   }
 
-  // 簡單 token 驗證
-  if (token !== VALID_TOKEN) {
+  // 從環境變數拿
+  const validToken = env?.CONTROL_TOKEN;
+  if (!validToken) {
+    return new Response("server token not configured", { status: 500 });
+  }
+  if (token !== validToken) {
     return new Response("unauthorized", { status: 401 });
   }
 
