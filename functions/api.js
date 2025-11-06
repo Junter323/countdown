@@ -1,119 +1,27 @@
-// 簡單記憶體：rooms 存各房的狀態，roomNames 存有哪些房間
-const rooms = {};
-const roomNames = new Set();
+// functions/api.js
 
-// 我們用這個房名來測 token，用到的時候不要存起來
-const CHECK_ROOM = "__check__";
+export async function onRequest(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
 
-export async function onRequestGet(context) {
-  const url = new URL(context.request.url);
+  // 我們所有的狀態都放在同一個 DO，名字就固定叫 "global"
+  const id = env.COUNTDOWN_DO.idFromName("global");
+  const stub = env.COUNTDOWN_DO.get(id);
 
-  // 列出目前所有房間
-  if (url.searchParams.get("rooms") === "1") {
-    // 把 __check__ 過濾掉
-    const list = Array.from(roomNames).filter((r) => r !== CHECK_ROOM);
-    return new Response(
-      JSON.stringify({ rooms: list }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+  // 只要是 websocket、get、post 都丟給 DO
+  if (request.method === "GET") {
+    // 保留原本的查詢參數
+    return stub.fetch(new Request(url.toString(), { method: "GET" }));
   }
 
-  // 拿單一房間狀態
-  const room = url.searchParams.get("room");
-  if (!room) {
-    return new Response("room required", { status: 400 });
-  }
-
-  const data =
-    rooms[room] || { state: "idle", targetTime: null, remaining: null };
-
-  // 如果正在跑，順便算目前剩多少毫秒
-  if (data.state === "running" && data.targetTime) {
-    const now = Date.now();
-    data.remaining = Math.max(0, data.targetTime - now);
-  }
-
-  return new Response(JSON.stringify(data), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-export async function onRequestPost(context) {
-  const env = context.env;
-  const body = await context.request.json();
-  const { room, action, targetTime, token } = body;
-
-  if (!room) {
-    return new Response("room required", { status: 400 });
-  }
-
-  const validToken = env?.CONTROL_TOKEN;
-  if (!validToken) {
-    return new Response("server token not configured", { status: 500 });
-  }
-  if (token !== validToken) {
-    return new Response("unauthorized", { status: 401 });
-  }
-
-  // 這筆只是拿來測 token 的，不要真的存起來
-  if (room === CHECK_ROOM) {
-    return new Response(
-      JSON.stringify({ ok: true, room, action }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  // 刪除是特例，要先處理
-  if (action === "delete") {
-    roomNames.delete(room);
-    delete rooms[room];
-    return new Response(
-      JSON.stringify({ ok: true, room, action }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  // 其他動作：如果 room 還沒建立就建立
-  if (!rooms[room]) {
-    rooms[room] = { state: "idle", targetTime: null, remaining: null };
-  }
-  // 有操作就加入清單
-  roomNames.add(room);
-
-  const r = rooms[room];
-
-  if (action === "start") {
-    r.state = "running";
-    r.targetTime = targetTime;
-    r.remaining = null;
-  } else if (action === "pause") {
-    if (r.state === "running" && r.targetTime) {
-      const now = Date.now();
-      r.remaining = Math.max(0, r.targetTime - now);
-    }
-    r.state = "paused";
-    r.targetTime = null;
-  } else if (action === "reset") {
-    r.state = "idle";
-    r.targetTime = null;
-    r.remaining = null;
-  }
-
-  return new Response(
-    JSON.stringify({ ok: true, room, action }),
-    {
-      status: 200,
+  if (request.method === "POST") {
+    const body = await request.text();
+    return stub.fetch(new Request(url.toString(), {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-    }
-  );
+      body
+    }));
+  }
+
+  return new Response("Method not allowed", { status: 405 });
 }

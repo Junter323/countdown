@@ -1,0 +1,12 @@
+name = "countdown-e3r"
+main = "functions/api.js"
+compatibility_date = "2025-11-07"
+
+[durable_objects]
+bindings = [
+  { name = "COUNTDOWN_DO", class_name = "CountdownManager" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CountdownManager"]
