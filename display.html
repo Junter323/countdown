@@ -27,7 +27,6 @@
   <div id="time"></div>
 
   <script>
-    // 換成你的 Worker 網址
     const API_BASE = "https://countdown-api.cometw1234.workers.dev";
 
     const params = new URLSearchParams(location.search);
@@ -51,47 +50,44 @@
       return `${h}:${m}:${s}`;
     }
 
-    // 我們自己維護的剩餘秒數
     let remainingSec = null;
     let running = false;
 
-    // 每 200ms 畫一次，用自己的時間減
+    // 畫面自己跑
     setInterval(() => {
       if (remainingSec == null) {
         timeEl.textContent = "";
         return;
       }
       if (running) {
-        remainingSec -= 0.2; // 200ms
+        remainingSec -= 0.1; // 100ms 更新一次
         if (remainingSec < 0) remainingSec = 0;
       }
       timeEl.textContent = format(Math.floor(remainingSec));
-    }, 200);
+    }, 100);
 
-    // 每 3 秒去跟後端校正一次
+    // 跟後端校正
     async function poll() {
       try {
         const res = await fetch(`${API_BASE}/api?room=${encodeURIComponent(roomId)}`);
         if (res.ok) {
           const data = await res.json();
-
           if (data.state === "running" && data.targetTime) {
             const now = Date.now();
-            const diffMs = data.targetTime - now;
-            remainingSec = Math.max(0, diffMs / 1000);
+            remainingSec = Math.max(0, (data.targetTime - now) / 1000);
             running = true;
           } else if (data.state === "paused" && typeof data.remaining === "number") {
             remainingSec = data.remaining / 1000;
             running = false;
-          } else if (data.state === "idle") {
+          } else {
             remainingSec = null;
             running = false;
           }
         }
       } catch (e) {
-        // 忽略錯誤，下次再抓
+        // ignore
       } finally {
-        setTimeout(poll, 3000); // 3 秒校正一次
+        setTimeout(poll, 1200); // 1.2 秒校正一次
       }
     }
     poll();
