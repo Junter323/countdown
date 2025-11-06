@@ -1,11 +1,11 @@
-// 簡單記憶體：rooms 存各房間狀態，roomNames 存有哪些房間
+// 簡單記憶體：rooms 存各房的狀態，roomNames 存有哪些房間
 const rooms = {};
 const roomNames = new Set();
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
 
-  // 如果是要列出所有房間
+  // 列出目前所有房間
   if (url.searchParams.get("rooms") === "1") {
     return new Response(
       JSON.stringify({ rooms: Array.from(roomNames) }),
@@ -16,13 +16,15 @@ export async function onRequestGet(context) {
     );
   }
 
-  // 否則就是拿單一 room 的狀態
+  // 拿單一房間狀態
   const room = url.searchParams.get("room");
   if (!room) {
     return new Response("room required", { status: 400 });
   }
+
   const data = rooms[room] || { state: "idle", targetTime: null, remaining: null };
 
+  // 如果正在跑，順便算目前剩多少毫秒
   if (data.state === "running" && data.targetTime) {
     const now = Date.now();
     data.remaining = Math.max(0, data.targetTime - now);
@@ -52,11 +54,24 @@ export async function onRequestPost(context) {
     return new Response("unauthorized", { status: 401 });
   }
 
-  // 沒有就初始化
+  // 刪除是特例，要先處理
+  if (action === "delete") {
+    roomNames.delete(room);
+    delete rooms[room];
+    return new Response(
+      JSON.stringify({ ok: true, room, action }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  // 其他動作：如果 room 還沒建立就建立
   if (!rooms[room]) {
     rooms[room] = { state: "idle", targetTime: null, remaining: null };
   }
-  // 有操作這個 room，就放進清單
+  // 有操作就加入清單
   roomNames.add(room);
 
   const r = rooms[room];

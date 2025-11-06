@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <title>倒數控制中心</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Bootstrap 5 -->
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
     rel="stylesheet"
   />
   <style>
     body { background: #f5f5f5; }
-    .timer-card { min-width: 260px; }
     .status-text { font-size: 0.75rem; color: #6c757d; }
+    /* token 遮罩 */
     #token-overlay {
       position: fixed;
       inset: 0;
@@ -24,12 +26,20 @@
       background: #fff;
       padding: 20px 24px;
       border-radius: 8px;
-      width: 320px;
+      width: min(340px, 90vw);
       box-shadow: 0 4px 16px rgba(0,0,0,.2);
+    }
+    /* 卡片在手機時滿版 */
+    @media (max-width: 576px) {
+      .control-header {
+        flex-direction: column;
+        gap: 8px;
+      }
     }
   </style>
 </head>
 <body>
+  <!-- 一開始的 token 輸入畫面 -->
   <div id="token-overlay">
     <div id="token-box">
       <h5 class="mb-3">請輸入控制 token</h5>
@@ -41,22 +51,23 @@
     </div>
   </div>
 
+  <!-- 真正的控制頁面 -->
   <div class="container py-4" id="control-ui" style="display:none;">
-    <h1 class="mb-3">倒數控制中心</h1>
-
-    <div class="row g-2 mb-4">
-      <div class="col-auto">
-        <input id="newId" type="text" class="form-control" placeholder="輸入倒數 ID，例如 show-1" />
-      </div>
-      <div class="col-auto">
+    <div class="d-flex justify-content-between align-items-center mb-3 gap-2 control-header">
+      <h1 class="mb-0">倒數控制中心</h1>
+      <div class="d-flex gap-2 flex-wrap">
+        <input id="newId" type="text" class="form-control" style="min-width:180px" placeholder="輸入倒數 ID，例如 show-1" />
         <button id="addBtn" class="btn btn-primary">新增倒數卡片</button>
       </div>
     </div>
 
-    <div id="cards" class="row g-3"></div>
+    <div id="cards" class="row g-3">
+      <!-- 卡片會動態插入 -->
+    </div>
   </div>
 
   <script>
+    // DOM 取得
     const cardsEl = document.getElementById('cards');
     const addBtn = document.getElementById('addBtn');
     const newIdInput = document.getElementById('newId');
@@ -67,8 +78,10 @@
     const tokenSubmit = document.getElementById('token-submit');
     const tokenError = document.getElementById('token-error');
 
+    // 用來帶去後端的 token，先看 sessionStorage 有沒有
     let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
 
+    // 本機儲存卡片列表的 key
     const SAVED_KEY = 'countdown_rooms';
     function getSavedRooms() {
       try {
@@ -81,11 +94,12 @@
       localStorage.setItem(SAVED_KEY, JSON.stringify(list));
     }
 
+    // 嘗試登入，成功才會看到控制頁
     async function tryEnter() {
       const t = tokenInput.value.trim();
       if (!t) return;
 
-      // 先用假的 room 驗證 token
+      // 用假 room 去後端驗證 token
       const res = await fetch('/api', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -96,12 +110,13 @@
         return;
       }
 
+      // 成功
       CONTROL_TOKEN = t;
       sessionStorage.setItem('countdown_token', t);
       overlay.style.display = 'none';
       controlUI.style.display = '';
 
-      // 1. 先跟後端拿有哪些 room
+      // 向後端拿目前有哪些房間
       let serverRooms = [];
       try {
         const res2 = await fetch('/api?rooms=1');
@@ -113,19 +128,15 @@
         // ignore
       }
 
-      // 2. 再拿本機的
+      // 再加上本機存的
       const localRooms = getSavedRooms();
-
-      // 3. 合併（去重）
       const allRooms = Array.from(new Set([...serverRooms, ...localRooms]));
-
       if (allRooms.length === 0) {
-        // 沒東西就建一張預設
+        // 沒有任何房間就給預設
         createCard('show-1');
         saveRooms(['show-1']);
       } else {
         allRooms.forEach(r => createCard(r));
-        // 同步回本機
         saveRooms(allRooms);
       }
     }
@@ -135,7 +146,7 @@
       if (e.key === 'Enter') tryEnter();
     });
 
-    // 如果本機已經有 token，就先試著登入
+    // 如果這台瀏覽器之前已經成功過，就自動試一次
     (async () => {
       if (CONTROL_TOKEN) {
         tokenInput.value = CONTROL_TOKEN;
@@ -143,7 +154,7 @@
       }
     })();
 
-    // 新增卡片
+    // 新增卡片按鈕
     if (addBtn) {
       addBtn.onclick = () => {
         const id = newIdInput.value.trim();
@@ -159,17 +170,23 @@
       };
     }
 
+    // 建立一張倒數卡片
     function createCard(roomId) {
+      // 避免重複
       if (document.getElementById('card-' + roomId)) return;
 
+      // col-12 手機滿版，md 以上兩欄，lg 三欄
       const col = document.createElement('div');
-      col.className = 'col-md-4 col-sm-6';
+      col.className = 'col-12 col-md-6 col-lg-4';
       col.id = 'card-' + roomId;
 
       col.innerHTML = `
-        <div class="card shadow-sm timer-card">
+        <div class="card shadow-sm h-100">
           <div class="card-body">
-            <h5 class="card-title mb-3">${roomId}</h5>
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <h5 class="card-title mb-0">${roomId}</h5>
+              <button class="btn btn-outline-danger btn-sm" data-delete>刪除</button>
+            </div>
             <div class="row g-2 mb-2">
               <div class="col-4">
                 <label class="form-label mb-1">時</label>
@@ -207,7 +224,9 @@
       const pauseBtn = col.querySelector('[data-pause]');
       const resetBtn = col.querySelector('[data-reset]');
       const openBtn = col.querySelector('[data-open]');
+      const deleteBtn = col.querySelector('[data-delete]');
 
+      // 開始
       startBtn.onclick = async () => {
         const h = Number(hInput.value) || 0;
         const m = Number(mInput.value) || 0;
@@ -217,25 +236,44 @@
         await sendApi({ room: roomId, action: 'start', targetTime }, statusEl);
       };
 
+      // 暫停
       pauseBtn.onclick = async () => {
         await sendApi({ room: roomId, action: 'pause' }, statusEl);
       };
 
+      // 重設
       resetBtn.onclick = async () => {
         await sendApi({ room: roomId, action: 'reset' }, statusEl);
       };
 
+      // 開顯示頁
       openBtn.onclick = () => {
         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
 
-      // 每秒去拿狀態
+      // 刪除
+      deleteBtn.onclick = async () => {
+        const ok = confirm(`確定要刪除「${roomId}」這張卡嗎？`);
+        if (!ok) return;
+        const res = await sendApi({ room: roomId, action: 'delete' }, statusEl);
+        if (res !== false) {
+          // 前端移除
+          col.remove();
+          // 本機存的也移除
+          const cur = getSavedRooms();
+          const next = cur.filter(r => r !== roomId);
+          saveRooms(next);
+        }
+      };
+
+      // 每秒抓一次狀態，顯示目前倒數
       async function poll() {
         try {
           const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
           if (res.ok) {
             const data = await res.json();
             statusEl.textContent = '狀態：' + (data.state || '未知');
+
             let sec = null;
             if (data.state === 'paused' && typeof data.remaining === 'number') {
               sec = Math.floor(data.remaining / 1000);
@@ -268,19 +306,22 @@
           body: JSON.stringify({ ...body, token: CONTROL_TOKEN })
         });
         if (res.status === 401) {
+          // token 錯，回登入
           overlay.style.display = '';
           controlUI.style.display = 'none';
           tokenError.style.display = 'block';
-          return;
+          return false;
         }
         if (!res.ok) {
           statusEl.textContent = '狀態：失敗 (' + res.status + ')';
-          return;
+          return false;
         }
         const data = await res.json();
         statusEl.textContent = '狀態：已送出 ' + (data?.action || body.action);
+        return true;
       } catch (err) {
         statusEl.textContent = '狀態：送出失敗';
+        return false;
       }
     }
   </script>
