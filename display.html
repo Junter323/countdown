@@ -5,14 +5,10 @@
   <title>倒數顯示</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    :root {
-      --bg: #000;
-      --fg: #fff;
-    }
     body {
       margin: 0;
-      background: var(--bg);
-      color: var(--fg);
+      background: #000;
+      color: #fff;
       height: 100vh;
       display: flex;
       align-items: center;
@@ -21,46 +17,47 @@
       text-align: center;
     }
     #time {
-      font-size: clamp(4rem, 14vw, 10rem);
-      letter-spacing: 0.1em;
+      /* 取螢幕寬跟高的較小值去算，讓它真的大 */
+      font-size: min(18vw, 18vh);
+      letter-spacing: 0.12em;
+      line-height: 1;
     }
     #info {
       position: fixed;
       top: 10px;
       left: 10px;
       font-size: 14px;
-      opacity: 0.5;
+      opacity: 0.4;
     }
   </style>
 </head>
 <body>
-  <div id="info">載入中...</div>
-  <div id="time">--:--:--</div>
+  <div id="info"></div>
+  <div id="time"></div>
 
   <script>
     const params = new URLSearchParams(location.search);
-    const roomId = params.get('id') || 'show-1'; // 沒給就看預設
+    const roomId = params.get('id') || 'show-1';
     const timeEl = document.getElementById('time');
     const infoEl = document.getElementById('info');
 
     let state = 'idle';
     let targetTime = null;
     let remaining = null;
+    let hasData = false; // 一開始空白用
 
     infoEl.textContent = `ID：${roomId}`;
 
-    // 1. 每秒跟 /api 要最新狀態（這是最穩的做法）
     async function poll() {
       try {
         const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
         if (res.ok) {
           const data = await res.json();
           applyState(data);
-        } else {
-          infoEl.textContent = `ID：${roomId}（讀取失敗 ${res.status}）`;
+          hasData = true;
         }
       } catch (e) {
-        infoEl.textContent = `ID：${roomId}（連線失敗）`;
+        // ignore
       } finally {
         setTimeout(poll, 1000);
       }
@@ -72,22 +69,18 @@
       remaining = typeof data.remaining === 'number' ? data.remaining : null;
     }
 
-    // 2. 畫面自己跑，這樣就不會被網路延遲卡住
     function render() {
-      let text = '--:--:--';
-
-      if (state === 'paused' && remaining != null) {
+      if (!hasData) {
+        timeEl.textContent = '';
+      } else if (state === 'paused' && remaining != null) {
         const sec = Math.floor(remaining / 1000);
-        text = format(sec);
+        timeEl.textContent = format(sec);
       } else if (state === 'running' && targetTime) {
-        const now = Date.now();
-        const diffSec = Math.max(0, Math.floor((targetTime - now) / 1000));
-        text = format(diffSec);
-      } else if (state === 'idle') {
-        text = '--:--:--';
+        const diff = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
+        timeEl.textContent = format(diff);
+      } else {
+        timeEl.textContent = '';
       }
-
-      timeEl.textContent = text;
       requestAnimationFrame(render);
     }
 

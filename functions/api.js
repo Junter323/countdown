@@ -1,16 +1,16 @@
-// 很簡單的記憶體資料庫（同一個執行環境會記得）
-// { roomId: { state, targetTime, remaining } }
+// 簡單記憶體狀態
 const rooms = {};
+// 換成你自己的 token
+const VALID_TOKEN = "CHANGE_ME";
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const room = url.searchParams.get("room");
   if (!room) {
     return new Response("room required", { status: 400 });
-    }
+  }
   const data = rooms[room] || { state: "idle", targetTime: null, remaining: null };
 
-  // 如果在跑，就順便算一下現在剩多少給前端
   if (data.state === "running" && data.targetTime) {
     const now = Date.now();
     data.remaining = Math.max(0, data.targetTime - now);
@@ -24,12 +24,17 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const body = await context.request.json();
-  const { room, action, targetTime } = body;
+  const { room, action, targetTime, token } = body;
+
   if (!room) {
     return new Response("room required", { status: 400 });
   }
 
-  // 如果這個 room 還沒建立，就先給一個初始值
+  // 簡單 token 驗證
+  if (token !== VALID_TOKEN) {
+    return new Response("unauthorized", { status: 401 });
+  }
+
   if (!rooms[room]) {
     rooms[room] = { state: "idle", targetTime: null, remaining: null };
   }
@@ -37,7 +42,6 @@ export async function onRequestPost(context) {
   const r = rooms[room];
 
   if (action === "start") {
-    // 控制頁已經幫我們算好 targetTime 了
     r.state = "running";
     r.targetTime = targetTime;
     r.remaining = null;
@@ -54,8 +58,11 @@ export async function onRequestPost(context) {
     r.remaining = null;
   }
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ ok: true, room, action }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
