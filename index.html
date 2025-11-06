@@ -11,6 +11,7 @@
     body { background: #f5f5f5; }
     .timer-card { min-width: 260px; }
     .status-text { font-size: 0.75rem; color: #6c757d; }
+    /* token 遮罩 */
     #token-overlay {
       position: fixed;
       inset: 0;
@@ -25,11 +26,12 @@
       padding: 20px 24px;
       border-radius: 8px;
       width: 320px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.2);
     }
   </style>
 </head>
 <body>
-  <!-- token 輸入遮罩 -->
+  <!-- 進入前先輸入 token -->
   <div id="token-overlay">
     <div id="token-box">
       <h5 class="mb-3">請輸入控制 token</h5>
@@ -41,7 +43,7 @@
     </div>
   </div>
 
-  <!-- 真正的控制頁面 -->
+  <!-- 主畫面 -->
   <div class="container py-4" id="control-ui" style="display:none;">
     <h1 class="mb-3">倒數控制中心</h1>
 
@@ -62,36 +64,62 @@
     const addBtn = document.getElementById('addBtn');
     const newIdInput = document.getElementById('newId');
 
-    // 存在這裡的 token 會被 sendApi 用
-    let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
-
-    // token overlay 邏輯
+    // token 遮罩元素
     const overlay = document.getElementById('token-overlay');
     const controlUI = document.getElementById('control-ui');
     const tokenInput = document.getElementById('token-input');
     const tokenSubmit = document.getElementById('token-submit');
     const tokenError = document.getElementById('token-error');
 
+    // 儲存控制 token（放在 sessionStorage，溫和一點）
+    let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
+
+    // 本機儲存卡片列表的 key
+    const SAVED_KEY = 'countdown_rooms';
+
+    function getSavedRooms() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_KEY)) || [];
+      } catch (e) {
+        return [];
+      }
+    }
+    function saveRooms(list) {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(list));
+    }
+
+    // 嘗試登入（驗 token）
     async function tryEnter() {
       const t = tokenInput.value.trim();
       if (!t) return;
-      // 我們用一個假的請求來測 token 有沒有過
+
+      // 用一個假的 room 來測試 token 有沒有過
       const res = await fetch('/api', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ room: '__check__', action: 'reset', token: t })
       });
+
       if (res.status === 401) {
         tokenError.style.display = 'block';
         return;
       }
-      // 成功
+
+      // 通過了
       CONTROL_TOKEN = t;
       sessionStorage.setItem('countdown_token', t);
       overlay.style.display = 'none';
       controlUI.style.display = '';
-      // 加一張預設卡
-      createCard('show-1');
+
+      // 登入後把之前存過的房間復原
+      const rooms = getSavedRooms();
+      if (rooms.length) {
+        rooms.forEach(r => createCard(r));
+      } else {
+        // 沒有就給預設一張
+        createCard('show-1');
+        saveRooms(['show-1']);
+      }
     }
 
     tokenSubmit.onclick = tryEnter;
@@ -99,7 +127,7 @@
       if (e.key === 'Enter') tryEnter();
     });
 
-    // 如果 sessionStorage 有 token，試一次
+    // 如果 sessionStorage 裡本來就有 token，就試著直接登入
     (async () => {
       if (CONTROL_TOKEN) {
         tokenInput.value = CONTROL_TOKEN;
@@ -107,17 +135,25 @@
       }
     })();
 
-    // 新增卡片
+    // 新增卡片按鈕
     if (addBtn) {
       addBtn.onclick = () => {
         const id = newIdInput.value.trim();
         if (!id) return;
         createCard(id);
+        // 存到 localStorage
+        const cur = getSavedRooms();
+        if (!cur.includes(id)) {
+          cur.push(id);
+          saveRooms(cur);
+        }
         newIdInput.value = '';
       };
     }
 
+    // 建立一張卡片
     function createCard(roomId) {
+      // 避免重複
       if (document.getElementById('card-' + roomId)) return;
 
       const col = document.createElement('div');
@@ -187,13 +223,14 @@
         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
 
-      // 定時抓狀態
+      // 每秒撈後端更新「狀態＋目前倒數」
       async function poll() {
         try {
           const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
           if (res.ok) {
             const data = await res.json();
             statusEl.textContent = '狀態：' + (data.state || '未知');
+
             let sec = null;
             if (data.state === 'paused' && typeof data.remaining === 'number') {
               sec = Math.floor(data.remaining / 1000);
@@ -226,10 +263,10 @@
           body: JSON.stringify({ ...body, token: CONTROL_TOKEN })
         });
         if (res.status === 401) {
-          // token 失效，叫回遮罩
+          // token 錯了，回登入畫面
           overlay.style.display = '';
           controlUI.style.display = 'none';
-          document.getElementById('token-error').style.display = 'block';
+          tokenError.style.display = 'block';
           return;
         }
         if (!res.ok) {
@@ -243,5 +280,6 @@
       }
     }
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
