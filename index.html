@@ -104,7 +104,7 @@
         await sendApi({ room: roomId, action: 'reset' }, statusEl);
       };
       openBtn.onclick = () => {
-  	window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
+         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
     }
 
