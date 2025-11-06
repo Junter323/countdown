@@ -43,7 +43,7 @@
   </style>
 </head>
 <body>
-  <!-- token -->
+  <!-- token 輸入 -->
   <div id="token-overlay">
     <div id="token-box">
       <h5 class="mb-3">請輸入控制 token</h5>
@@ -69,6 +69,10 @@
   </div>
 
   <script>
+    // 👇 這一行換成你 Cloudflare Worker 的網址
+    // 例如 const API_BASE = "https://countdown-api.junter323.workers.dev";
+    const API_BASE = "https://countdown-api.cometw1234.workers.dev/";
+
     const CHECK_ROOM = "__check__";
 
     const cardsEl = document.getElementById('cards');
@@ -81,6 +85,7 @@
     const tokenSubmit = document.getElementById('token-submit');
     const tokenError = document.getElementById('token-error');
 
+    // 把 token 存在 sessionStorage 就不用一直打
     let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
 
     const SAVED_KEY = 'countdown_rooms';
@@ -95,12 +100,13 @@
       localStorage.setItem(SAVED_KEY, JSON.stringify(list));
     }
 
+    // 登入 + 載入房間
     async function tryEnter() {
       const t = tokenInput.value.trim();
       if (!t) return;
 
       // 先驗 token
-      const res = await fetch('/api', {
+      const res = await fetch(`${API_BASE}/api`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ room: CHECK_ROOM, action: 'reset', token: t })
@@ -115,17 +121,17 @@
       overlay.style.display = 'none';
       controlUI.style.display = '';
 
-      // 拿後端房間
+      // 從後端拿現有房間
       let serverRooms = [];
       try {
-        const res2 = await fetch('/api?rooms=1');
-        if (res2.ok) {
-          const data = await res2.json();
+        const r2 = await fetch(`${API_BASE}/api?rooms=1`);
+        if (r2.ok) {
+          const data = await r2.json();
           serverRooms = (data.rooms || []).filter(r => r !== CHECK_ROOM);
         }
       } catch (e) {}
 
-      // 加上本機的
+      // 再加上本機存的
       const localRooms = getSavedRooms().filter(r => r !== CHECK_ROOM);
       const allRooms = Array.from(new Set([...serverRooms, ...localRooms]));
 
@@ -143,7 +149,7 @@
       if (e.key === 'Enter') tryEnter();
     });
 
-    // 有舊 token 就直接試
+    // 有存過 token 的話自動登入
     (async () => {
       if (CONTROL_TOKEN) {
         tokenInput.value = CONTROL_TOKEN;
@@ -151,6 +157,7 @@
       }
     })();
 
+    // 新增卡片
     if (addBtn) {
       addBtn.onclick = () => {
         const id = newIdInput.value.trim();
@@ -165,8 +172,9 @@
       };
     }
 
+    // 建立卡片
     function createCard(roomId) {
-      if (roomId === CHECK_ROOM) return; // 安全防護
+      if (roomId === CHECK_ROOM) return;
       if (document.getElementById('card-' + roomId)) return;
 
       const col = document.createElement('div');
@@ -237,6 +245,7 @@
       };
 
       openBtn.onclick = () => {
+        // 顯示頁也要記得改成打 Worker 的版本喔
         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
 
@@ -255,7 +264,7 @@
       // 每秒更新狀態
       async function poll() {
         try {
-          const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
+          const res = await fetch(`${API_BASE}/api?room=${encodeURIComponent(roomId)}`);
           if (res.ok) {
             const data = await res.json();
             statusEl.textContent = '狀態：' + (data.state || '未知');
@@ -285,7 +294,7 @@
 
     async function sendApi(body, statusEl) {
       try {
-        const res = await fetch('/api', {
+        const res = await fetch(`${API_BASE}/api`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...body, token: CONTROL_TOKEN })
