@@ -2,13 +2,18 @@
 const rooms = {};
 const roomNames = new Set();
 
+// 我們用這個房名來測 token，用到的時候不要存起來
+const CHECK_ROOM = "__check__";
+
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
 
   // 列出目前所有房間
   if (url.searchParams.get("rooms") === "1") {
+    // 把 __check__ 過濾掉
+    const list = Array.from(roomNames).filter((r) => r !== CHECK_ROOM);
     return new Response(
-      JSON.stringify({ rooms: Array.from(roomNames) }),
+      JSON.stringify({ rooms: list }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -22,7 +27,8 @@ export async function onRequestGet(context) {
     return new Response("room required", { status: 400 });
   }
 
-  const data = rooms[room] || { state: "idle", targetTime: null, remaining: null };
+  const data =
+    rooms[room] || { state: "idle", targetTime: null, remaining: null };
 
   // 如果正在跑，順便算目前剩多少毫秒
   if (data.state === "running" && data.targetTime) {
@@ -45,13 +51,23 @@ export async function onRequestPost(context) {
     return new Response("room required", { status: 400 });
   }
 
-  // 從環境變數拿 token
   const validToken = env?.CONTROL_TOKEN;
   if (!validToken) {
     return new Response("server token not configured", { status: 500 });
   }
   if (token !== validToken) {
     return new Response("unauthorized", { status: 401 });
+  }
+
+  // 這筆只是拿來測 token 的，不要真的存起來
+  if (room === CHECK_ROOM) {
+    return new Response(
+      JSON.stringify({ ok: true, room, action }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   // 刪除是特例，要先處理
