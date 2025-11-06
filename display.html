@@ -2,97 +2,87 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>倒數顯示</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Countdown Display</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
+    html, body {
+      height: 100%;
       margin: 0;
-      background: #000;
-      color: #fff;
-      height: 100vh;
+      background: black;
+      color: white;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: Arial, sans-serif;
-      text-align: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     #time {
-      /* 取螢幕寬跟高的較小值去算，讓它真的大 */
-      font-size: min(18vw, 18vh);
-      letter-spacing: 0.12em;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-align: center;
       line-height: 1;
-    }
-    #info {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      font-size: 14px;
-      opacity: 0.4;
     }
   </style>
 </head>
 <body>
-  <div id="info"></div>
   <div id="time"></div>
 
   <script>
+    // 換成你的 Worker 網址
+    const API_BASE = "https://countdown-api.cometw1234.workers.dev";
+
+    // 取得網址上的 id (=我們的房間 id)
     const params = new URLSearchParams(location.search);
-    const roomId = params.get('id') || 'show-1';
-    const timeEl = document.getElementById('time');
-    const infoEl = document.getElementById('info');
+    const roomId = params.get("id") || params.get("room") || "show-1";
 
-    let state = 'idle';
-    let targetTime = null;
-    let remaining = null;
-    let hasData = false; // 一開始空白用
+    const timeEl = document.getElementById("time");
 
-    infoEl.textContent = `ID：${roomId}`;
+    // 讓字會依照螢幕大小縮放
+    function resize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      // 取短邊的 20% 當字體
+      const size = Math.min(w, h) * 0.2;
+      timeEl.style.fontSize = size + "px";
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    function format(sec) {
+      const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+      const s = String(sec % 60).padStart(2, "0");
+      return `${h}:${m}:${s}`;
+    }
 
     async function poll() {
       try {
-        const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
+        const res = await fetch(`${API_BASE}/api?room=${encodeURIComponent(roomId)}`);
         if (res.ok) {
           const data = await res.json();
-          applyState(data);
-          hasData = true;
+          let sec = null;
+          if (data.state === "paused" && typeof data.remaining === "number") {
+            sec = Math.floor(data.remaining / 1000);
+          } else if (data.state === "running" && data.targetTime) {
+            sec = Math.max(0, Math.floor((data.targetTime - Date.now()) / 1000));
+          }
+
+          if (sec == null) {
+            // 一開始不顯示 --:--:--
+            timeEl.textContent = "";
+          } else {
+            timeEl.textContent = format(sec);
+          }
+        } else {
+          // 拿不到就不要閃現醜字
+          timeEl.textContent = "";
         }
       } catch (e) {
         // ignore
       } finally {
-        setTimeout(poll, 1000);
+        setTimeout(poll, 500); // 半秒抓一次比較順
       }
     }
-
-    function applyState(data) {
-      state = data.state || 'idle';
-      targetTime = data.targetTime || null;
-      remaining = typeof data.remaining === 'number' ? data.remaining : null;
-    }
-
-    function render() {
-      if (!hasData) {
-        timeEl.textContent = '';
-      } else if (state === 'paused' && remaining != null) {
-        const sec = Math.floor(remaining / 1000);
-        timeEl.textContent = format(sec);
-      } else if (state === 'running' && targetTime) {
-        const diff = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
-        timeEl.textContent = format(diff);
-      } else {
-        timeEl.textContent = '';
-      }
-      requestAnimationFrame(render);
-    }
-
-    function format(sec) {
-      const h = String(Math.floor(sec / 3600)).padStart(2, '0');
-      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
-      const s = String(sec % 60).padStart(2, '0');
-      return `${h}:${m}:${s}`;
-    }
-
     poll();
-    render();
   </script>
 </body>
 </html>
