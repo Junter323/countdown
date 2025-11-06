@@ -11,7 +11,6 @@
     body { background: #f5f5f5; }
     .timer-card { min-width: 260px; }
     .status-text { font-size: 0.75rem; color: #6c757d; }
-    /* token 遮罩 */
     #token-overlay {
       position: fixed;
       inset: 0;
@@ -31,7 +30,6 @@
   </style>
 </head>
 <body>
-  <!-- 進入前先輸入 token -->
   <div id="token-overlay">
     <div id="token-box">
       <h5 class="mb-3">請輸入控制 token</h5>
@@ -43,7 +41,6 @@
     </div>
   </div>
 
-  <!-- 主畫面 -->
   <div class="container py-4" id="control-ui" style="display:none;">
     <h1 class="mb-3">倒數控制中心</h1>
 
@@ -64,19 +61,15 @@
     const addBtn = document.getElementById('addBtn');
     const newIdInput = document.getElementById('newId');
 
-    // token 遮罩元素
     const overlay = document.getElementById('token-overlay');
     const controlUI = document.getElementById('control-ui');
     const tokenInput = document.getElementById('token-input');
     const tokenSubmit = document.getElementById('token-submit');
     const tokenError = document.getElementById('token-error');
 
-    // 儲存控制 token（放在 sessionStorage，溫和一點）
     let CONTROL_TOKEN = sessionStorage.getItem('countdown_token') || '';
 
-    // 本機儲存卡片列表的 key
     const SAVED_KEY = 'countdown_rooms';
-
     function getSavedRooms() {
       try {
         return JSON.parse(localStorage.getItem(SAVED_KEY)) || [];
@@ -88,37 +81,52 @@
       localStorage.setItem(SAVED_KEY, JSON.stringify(list));
     }
 
-    // 嘗試登入（驗 token）
     async function tryEnter() {
       const t = tokenInput.value.trim();
       if (!t) return;
 
-      // 用一個假的 room 來測試 token 有沒有過
+      // 先用假的 room 驗證 token
       const res = await fetch('/api', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ room: '__check__', action: 'reset', token: t })
       });
-
       if (res.status === 401) {
         tokenError.style.display = 'block';
         return;
       }
 
-      // 通過了
       CONTROL_TOKEN = t;
       sessionStorage.setItem('countdown_token', t);
       overlay.style.display = 'none';
       controlUI.style.display = '';
 
-      // 登入後把之前存過的房間復原
-      const rooms = getSavedRooms();
-      if (rooms.length) {
-        rooms.forEach(r => createCard(r));
-      } else {
-        // 沒有就給預設一張
+      // 1. 先跟後端拿有哪些 room
+      let serverRooms = [];
+      try {
+        const res2 = await fetch('/api?rooms=1');
+        if (res2.ok) {
+          const data = await res2.json();
+          serverRooms = data.rooms || [];
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // 2. 再拿本機的
+      const localRooms = getSavedRooms();
+
+      // 3. 合併（去重）
+      const allRooms = Array.from(new Set([...serverRooms, ...localRooms]));
+
+      if (allRooms.length === 0) {
+        // 沒東西就建一張預設
         createCard('show-1');
         saveRooms(['show-1']);
+      } else {
+        allRooms.forEach(r => createCard(r));
+        // 同步回本機
+        saveRooms(allRooms);
       }
     }
 
@@ -127,7 +135,7 @@
       if (e.key === 'Enter') tryEnter();
     });
 
-    // 如果 sessionStorage 裡本來就有 token，就試著直接登入
+    // 如果本機已經有 token，就先試著登入
     (async () => {
       if (CONTROL_TOKEN) {
         tokenInput.value = CONTROL_TOKEN;
@@ -135,13 +143,13 @@
       }
     })();
 
-    // 新增卡片按鈕
+    // 新增卡片
     if (addBtn) {
       addBtn.onclick = () => {
         const id = newIdInput.value.trim();
         if (!id) return;
         createCard(id);
-        // 存到 localStorage
+        // 存本機
         const cur = getSavedRooms();
         if (!cur.includes(id)) {
           cur.push(id);
@@ -151,9 +159,7 @@
       };
     }
 
-    // 建立一張卡片
     function createCard(roomId) {
-      // 避免重複
       if (document.getElementById('card-' + roomId)) return;
 
       const col = document.createElement('div');
@@ -223,14 +229,13 @@
         window.open(`/display.html?id=${encodeURIComponent(roomId)}`, '_blank');
       };
 
-      // 每秒撈後端更新「狀態＋目前倒數」
+      // 每秒去拿狀態
       async function poll() {
         try {
           const res = await fetch(`/api?room=${encodeURIComponent(roomId)}`);
           if (res.ok) {
             const data = await res.json();
             statusEl.textContent = '狀態：' + (data.state || '未知');
-
             let sec = null;
             if (data.state === 'paused' && typeof data.remaining === 'number') {
               sec = Math.floor(data.remaining / 1000);
@@ -263,7 +268,6 @@
           body: JSON.stringify({ ...body, token: CONTROL_TOKEN })
         });
         if (res.status === 401) {
-          // token 錯了，回登入畫面
           overlay.style.display = '';
           controlUI.style.display = 'none';
           tokenError.style.display = 'block';
