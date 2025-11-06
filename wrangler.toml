@@ -1,5 +1,5 @@
 name = "countdown-e3r"
-main = "functions/api.js"
+main = "_worker.js"
 compatibility_date = "2025-11-07"
 
 [durable_objects]
